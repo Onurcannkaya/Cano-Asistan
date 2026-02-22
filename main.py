@@ -149,7 +149,7 @@ def main(page: ft.Page):
         baslik = ft.Container(
             content=ft.Row([
                 ft.Text("🤖", size=24),
-                ft.Column([ft.Text("Cano", weight="bold"), ft.Text("v4.0 Bildirimli", size=10)], spacing=0, expand=True),
+                ft.Column([ft.Text("Cano", weight="bold"), ft.Text("v3.8 Stabil", size=10)], spacing=0, expand=True),
                 konum_dropdown
             ]), padding=15, bgcolor="#161B22"
         )
