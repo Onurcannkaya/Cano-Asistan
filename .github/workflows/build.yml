@@ -68,8 +68,7 @@ jobs:
           yes | flet build apk \
             --project "Cano" \
             --org "com.onurcankaya" \
-            --product "Cano Asistan" \
-            --description "Sesli Kişisel Asistan"
+            --product "Cano Asistan"
 
       # --- 8. APK dosyasını artifact olarak sun ---
       - name: Upload APK
