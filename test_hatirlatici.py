@@ -145,7 +145,7 @@ def test_gecmis_saat_yarina_kurulur(tmp_path, monkeypatch):
     # Kesinlikle geçmiş bir saat: 00:01
     simdi = datetime.now()
     if simdi.hour > 0 or simdi.minute > 1:
-        yanit = hat.hatirlatici_ekle("saat 00:01 de hatırlat")
+        yanit, hedef = hat.hatirlatici_ekle("saat 00:01 de hatırlat")
         assert "yarın" in yanit.lower()
 
         # JSON'a yazıldığını doğrula

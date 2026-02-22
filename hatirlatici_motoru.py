@@ -1,11 +1,11 @@
 """
 hatirlatici_motoru.py
-Cano'nun hafızası ve zamanlama beyni.
+Cano'nun hafızası ve zamanlama beyni — v4.0
 - Kullanıcının sesli komutundan saat bilgisini ayıklar.
 - Göreceli zaman ifadelerini destekler ("5 dakika sonra", "yarım saat sonra").
 - Coğrafi (konum bazlı) hatırlatıcıları destekler.
+- Android yerel bildirimlerini planlar (flet_notifications).
 - Hatırlatıcıları veri.json dosyasına kaydeder / yükler.
-- Her dakika kontrol ederek zamanı gelen hatırlatıcıları tetikler.
 - Bekleyen hatırlatıcıları sesli okur.
 """
 
@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Callable
 
 VERI_DOSYASI = Path("veri.json")
+
+# --- Bildirim ID sayacı (her bildirim benzersiz olmalı) ---
+_bildirim_sayac = [1000]
 
 
 # ---------------------------------------------------------------------------
@@ -210,25 +213,29 @@ def _kaydet(liste: list[dict]) -> None:
 # Hatırlatıcı işlemleri  (GÜNCELLENDİ)
 # ---------------------------------------------------------------------------
 
-def hatirlatici_ekle(metin: str) -> str:
+def hatirlatici_ekle(metin: str) -> tuple[str, datetime | None]:
     """
     Kullanıcının söylediği metinden zaman veya konum ayıklar ve hatırlatıcı kaydeder.
     Öncelik sırası: konum → göreceli zaman → mutlak saat.
-    Geri bildirim olarak Cano'nun söyleyeceği cümleyi döner.
+
+    Döner:
+      (geri_bildirim_metni, hedef_zaman)
+      - hedef_zaman: Android bildirimi planlamak için kullanılır.
+      - Konum bazlıysa hedef_zaman = None (geofence ile tetiklenir).
     """
 
-    # --- 0) Konum bazlı hatırlatıcı kontrolü (YENİ — Geofencing) ---
+    # --- 0) Konum bazlı hatırlatıcı (Geofencing) ---
     konum = konum_ayikla(metin)
     if konum is not None:
         liste = _yukle()
         liste.append({
             "metin": metin,
-            "zaman": None,          # zamana bağlı değil
-            "konum": konum,         # konuma bağlı
+            "zaman": None,
+            "konum": konum,
             "tetiklendi": False
         })
         _kaydet(liste)
-        return f"Tamam! {konum.capitalize()}'e varınca sana hatırlatacağım."
+        return (f"Tamam! {konum.capitalize()}'e varınca sana hatırlatacağım.", None)
 
     # --- 1) Göreceli zaman kontrolü ---
     hedef_zaman = goreceli_zaman_ayikla(metin)
@@ -243,20 +250,17 @@ def hatirlatici_ekle(metin: str) -> str:
             "tetiklendi": False
         })
         _kaydet(liste)
-        return f"Tamam! {saat_str} için hatırlatıcı kurdum."
+        return (f"Tamam! {saat_str} için hatırlatıcı kurdum.", hedef_zaman)
 
     # --- 2) Mutlak saat kontrolü ---
     sonuc = saati_ayikla(metin)
     if sonuc is None:
-        return "Üzgünüm, bir saat bilgisi bulamadım. Lütfen tekrar söyler misin?"
+        return ("Üzgünüm, bir saat bilgisi bulamadım. Lütfen tekrar söyler misin?", None)
 
     saat, dakika = sonuc
     simdi = datetime.now()
 
-    # Bugün için hedef zamanı oluştur
     hedef = simdi.replace(hour=saat, minute=dakika, second=0, microsecond=0)
-
-    # Eğer bu saat bugün zaten geçtiyse → yarına kur  (YENİ)
     if hedef <= simdi:
         hedef += timedelta(days=1)
 
@@ -270,9 +274,14 @@ def hatirlatici_ekle(metin: str) -> str:
     })
     _kaydet(liste)
 
-    # Kullanıcıya geri bildirim
     gun_bilgisi = "yarın" if hedef.date() > simdi.date() else "bugün"
-    return f"Tamam! {gun_bilgisi} {saat:02d}:{dakika:02d} için hatırlatıcı kurdum."
+    return (f"Tamam! {gun_bilgisi} {saat:02d}:{dakika:02d} için hatırlatıcı kurdum.", hedef)
+
+
+def yeni_bildirim_id() -> int:
+    """Her çağrıda benzersiz bir bildirim ID'si üretir."""
+    _bildirim_sayac[0] += 1
+    return _bildirim_sayac[0]
 
 
 # ---------------------------------------------------------------------------
