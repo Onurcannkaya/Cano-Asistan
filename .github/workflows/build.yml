@@ -51,19 +51,22 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      # --- 5. Flet CLI kur ---
-      - name: Install Flet CLI
-        run: pip install flet
+      # --- 5. Flet CLI + Bildirim kütüphanesi kur ---
+      - name: Install Flet CLI and dependencies
+        run: |
+          pip install flet
+          pip install git+https://github.com/Bbalduzz/flet_notifications.git
 
       # --- 6. Gemini API Key'i ortam değişkenine yaz ---
       #     (zeka_motoru.py bunu os.environ.get ile okur)
       - name: Set API key
         run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
 
-      # --- 7. APK derle ---
+      # --- 7. APK derle (--include-packages ile bildirim kütüphanesini zorla paketle) ---
       - name: Build APK
         run: |
-          flet build apk \
+          yes | flet build apk \
+            --include-packages flet_notifications \
             --project "Cano" \
             --org "com.onurcankaya" \
             --product "Cano Asistan" \

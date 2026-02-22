@@ -1,465 +1,244 @@
-"""
-main.py
-Cano Sesli Asistan — Flet GUI (Mobil Uyumlu v4.0)
-- ft.Audio ile ses çalma (pygame yok)
-- ft.AudioRecorder ile ses kayıt (PyAudio yok)
-- TextField ile metin girişi (klavye desteği)
-- Android yerel bildirimleri (flet_notifications)
-- Gemini STT ile ses → metin çevirme
-- edge-tts ile metin → ses çevirme
-
-Başlatma:
-  pip install -r requirements.txt
-  python main.py
-"""
-
-import asyncio
-import os
-import threading
-import time
-import tempfile
-from datetime import datetime
-
 import flet as ft
-import schedule
+import traceback
+import sys
 
-import ses_motoru as ses
-import hatirlatici_motoru as hat
-import butce_motoru as butce
-import zeka_motoru as zeka
-
-# --- Android yerel bildirim desteği (opsiyonel — masaüstünde yoksa yoksay) ---
+# ---------------------------------------------------------------------------
+# GÜVENLİ İMPORT: Herhangi bir kütüphane eksikse siyah ekran yerine
+# kırmızı hata mesajı gösterir — "Sessiz Çökme" koruması
+# ---------------------------------------------------------------------------
 try:
-    from flet_notifications import LocalNotifications
-    BILDIRIM_DESTEGI = True
-except ImportError:
-    LocalNotifications = None
-    BILDIRIM_DESTEGI = False
+    import asyncio
+    import os
+    import threading
+    import time
+    import tempfile
+    from datetime import datetime
+    import schedule
 
+    import ses_motoru as ses
+    import hatirlatici_motoru as hat
+    import butce_motoru as butce
+    import zeka_motoru as zeka
+
+    # Bildirim kütüphanesini çok dikkatli çağır
+    try:
+        from flet_notifications import LocalNotifications
+        BILDIRIM_DESTEGI = True
+    except Exception as e:
+        print(f"[!] Bildirim kütüphanesi yüklenemedi: {e}")
+        BILDIRIM_DESTEGI = False
+        LocalNotifications = None
+
+except Exception as global_err:
+    # Buraya düşerse: bir kütüphane eksik, uygulama hiç başlamadan patlamış
+    def emergency_main(page: ft.Page):
+        page.bgcolor = "#0D1117"
+        page.add(
+            ft.Text(
+                f"KRİTİK BAŞLATMA HATASI (Import Error):\n\n"
+                f"{traceback.format_exc()}",
+                color="red",
+                size=11,
+                selectable=True,
+            )
+        )
+        page.update()
+
+    if __name__ == "__main__":
+        ft.app(target=emergency_main)
+    sys.exit()
 
 # ---------------------------------------------------------------------------
-# Anahtar kelime listeleri  (KATI NİYET FİLTRESİ)
+# Sabitler ve Yardımcı Fonksiyonlar (Aynen Korundu)
 # ---------------------------------------------------------------------------
-
 _HATIRLATICI_CAPA = ["hatırlat", "uyar"]
 _HATIRLATICI_ZAMAN = ["dakika sonra", "saat sonra", "yarım saat"]
 _HATIRLATICI_GEO = ["gidince", "varınca", "yaklaşınca", "ulaşınca", "gelince"]
 
-SORGULAMA_ANAHTAR = [
-    "hatırlatıcılarımı oku", "hatırlatıcılarım", "hatırlatıcılar",
-    "neler var", "ne var", "bekleyen", "bekleyenler",
-    "okur musun", "listele",
-]
+SORGULAMA_ANAHTAR = ["hatırlatıcılarımı oku", "hatırlatıcılarım", "hatırlatıcılar", "neler var", "ne var", "bekleyen", "okur musun", "listele"]
 HARCAMA_ANAHTAR = ["harcadım", "aldım", "verdim", "ödedim", "lira", "tl"]
-BUTCE_OZET_ANAHTAR = [
-    "ne kadar harcadım", "bütçe özeti", "harcamalarım",
-    "toplam harcama", "bütçem", "harcama özeti",
-]
+BUTCE_OZET_ANAHTAR = ["ne kadar harcadım", "bütçe özeti", "harcamalarım", "toplam harcama", "bütçem", "harcama özeti"]
 CIKIS_ANAHTAR = ["çıkış", "kapat", "görüşürüz", "hoşça kal", "bay bay"]
-
 
 def _komut_icerir(metin: str, anahtar_liste: list[str]) -> bool:
     m = metin.lower()
     return any(k in m for k in anahtar_liste)
 
-
 def _hatirlatici_niyeti_var(metin: str) -> bool:
     m = metin.lower()
-    if any(k in m for k in _HATIRLATICI_GEO):
-        return True
-    if any(k in m for k in _HATIRLATICI_ZAMAN):
-        return True
+    if any(k in m for k in _HATIRLATICI_GEO): return True
+    if any(k in m for k in _HATIRLATICI_ZAMAN): return True
     return any(k in m for k in _HATIRLATICI_CAPA)
-
-
-# ---------------------------------------------------------------------------
-# Sohbet balonu widget'ı
-# ---------------------------------------------------------------------------
 
 def _balon_olustur(mesaj: str, kullanici_mi: bool) -> ft.Container:
     return ft.Container(
         content=ft.Column(
             controls=[
-                ft.Text(
-                    "Sen" if kullanici_mi else "🤖 Cano",
-                    size=11,
-                    weight=ft.FontWeight.BOLD,
-                    color="#90CAF9" if kullanici_mi else "#CE93D8",
-                ),
+                ft.Text("Sen" if kullanici_mi else "🤖 Cano", size=11, weight=ft.FontWeight.BOLD, color="#90CAF9" if kullanici_mi else "#CE93D8"),
                 ft.Text(mesaj, size=14, color="#E0E0E0", selectable=True),
-                ft.Text(
-                    datetime.now().strftime("%H:%M"),
-                    size=9, color="#757575",
-                ),
+                ft.Text(datetime.now().strftime("%H:%M"), size=9, color="#757575"),
             ],
             spacing=2, tight=True,
         ),
         bgcolor="#1E2A3A" if kullanici_mi else "#2A1E3A",
-        border_radius=ft.BorderRadius.only(
-            top_left=16, top_right=16,
-            bottom_right=4 if kullanici_mi else 16,
-            bottom_left=16 if kullanici_mi else 4,
-        ),
+        border_radius=ft.BorderRadius.only(top_left=16, top_right=16, bottom_right=4 if kullanici_mi else 16, bottom_left=16 if kullanici_mi else 4),
         padding=ft.Padding.symmetric(horizontal=16, vertical=10),
-        margin=ft.Margin.only(
-            left=80 if kullanici_mi else 8,
-            right=8 if kullanici_mi else 80,
-            bottom=6,
-        ),
+        margin=ft.Margin.only(left=80 if kullanici_mi else 8, right=8 if kullanici_mi else 80, bottom=6),
         alignment=ft.Alignment(1, 0) if kullanici_mi else ft.Alignment(-1, 0),
         animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
     )
 
-
 # ---------------------------------------------------------------------------
-# Ana uygulama
+# Ana Uygulama Mantığı
 # ---------------------------------------------------------------------------
 
 def main(page: ft.Page):
-    # --- Tema ---
-    page.title = "Cano — Kişisel Asistan"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = "#0D1117"
-    page.padding = 0
-    page.window.width = 420
-    page.window.height = 720
-    page.fonts = {
-        "Inter": "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
-    }
-    page.theme = ft.Theme(font_family="Inter")
+    try: # <--- TEŞHİS KATMANI: Siyah ekran yerine hatayı görmeni sağlar
+        # --- 1. SAYFA AYARLARI ---
+        page.title = "Cano — Kişisel Asistan"
+        page.theme_mode = ft.ThemeMode.DARK
+        page.bgcolor = "#0D1117"
+        page.padding = 0
+        page.fonts = {"Inter": "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"}
+        page.theme = ft.Theme(font_family="Inter")
 
-    # --- Android Yerel Bildirimler (v4.0) ---
-    bildirimler = None
-    if BILDIRIM_DESTEGI:
-        bildirimler = LocalNotifications()
-        page.overlay.append(bildirimler)
+        # --- 2. DURUM VE DEĞİŞKENLER ---
+        dinliyor_mu = False
+        _son_tts_yol = [None]
+        kayit_dosya_yolu = os.path.join(tempfile.gettempdir(), "cano_kayit.wav")
 
-        # Bildirim tıklandığında uygulamayı aç
-        def _bildirim_tiklandi(e):
-            page.window.to_front()
-        bildirimler.on_notification_action = _bildirim_tiklandi
-
-    # Bildirim izni iste (async — Android'de gerekli)
-    async def _izin_iste():
-        if bildirimler:
-            await bildirimler.request_permissions()
-
-    page.run_task(_izin_iste)
-
-    # --- Durum ---
-    dinliyor_mu = False
-    _son_tts_yol = [None]  # mutable container — closure'da kullanmak için
-
-    # --- ft.Audio bileşeni (TTS ses çalma) ---
-    ses_oynatici = ft.Audio(
-        src="",
-        autoplay=False,
-        volume=1.0,
-    )
-    page.overlay.append(ses_oynatici)
-
-    # --- ft.AudioRecorder bileşeni (mikrofon kayıt) ---
-    kayit_dosya_yolu = os.path.join(tempfile.gettempdir(), "cano_kayit.wav")
-
-    ses_kaydedici = ft.AudioRecorder(
-        audio_encoder=ft.AudioEncoder.WAV,
-    )
-    page.overlay.append(ses_kaydedici)
-
-    # --- UI bileşenleri ---
-    durum_metni = ft.Text(
-        "Hazırım! 🎙️",
-        size=12,
-        color="#90CAF9",
-        text_align=ft.TextAlign.CENTER,
-        animate_opacity=ft.Animation(300),
-    )
-
-    sohbet_listesi = ft.ListView(
-        expand=True, spacing=0,
-        padding=ft.Padding.symmetric(vertical=12),
-        auto_scroll=True,
-    )
-
-    def _mesaj_ekle(mesaj: str, kullanici_mi: bool):
-        sohbet_listesi.controls.append(_balon_olustur(mesaj, kullanici_mi))
-        page.update()
-
-    def _durumu_guncelle(metin: str, renk: str = "#90CAF9"):
-        durum_metni.value = metin
-        durum_metni.color = renk
-        page.update()
-
-    # --- TTS + ft.Audio ile sesli yanıt ---
-    def _cano_konus(metin: str):
-        """Cano konuşurken balonu ekler ve ft.Audio ile sesi çalar."""
-        _mesaj_ekle(metin, kullanici_mi=False)
-        _durumu_guncelle("🔊  Cano konuşuyor...", "#CE93D8")
-        try:
-            mp3_yol = ses.konuş(metin)
-            _son_tts_yol[0] = mp3_yol
-            ses_oynatici.src = mp3_yol
-            ses_oynatici.play()
-            # Ses dosyasının çalmasını bekle (basit yaklaşım)
-            time.sleep(max(1.0, len(metin) * 0.08))
-        except Exception as e:
-            print(f"[TTS] Hata: {e}")
-        _durumu_guncelle("Hazırım! 🎙️")
-
-    # --- Komut yönlendiricisi (Router) ---
-    def _komutu_isle(metin: str):
-        if _komut_icerir(metin, CIKIS_ANAHTAR):
-            _cano_konus("Görüşürüz! İyi günler dilerim.")
-            return
-        if _komut_icerir(metin, BUTCE_OZET_ANAHTAR):
-            _cano_konus(butce.harcama_ozeti())
-            return
-        if _komut_icerir(metin, SORGULAMA_ANAHTAR):
-            _cano_konus(hat.bekleyenleri_oku())
-            return
-        if _komut_icerir(metin, HARCAMA_ANAHTAR):
-            _cano_konus(butce.harcama_ekle(metin))
-            return
-        if _hatirlatici_niyeti_var(metin):
-            geri_bildirim, hedef_zaman = hat.hatirlatici_ekle(metin)
-            _cano_konus(geri_bildirim)
-            # Android yerel bildirimi planla (uygulama kapalıyken de çalar)
-            if hedef_zaman and bildirimler:
-                async def _bildirim_planla():
-                    await bildirimler.schedule_notification(
-                        id=hat.yeni_bildirim_id(),
-                        title="⏰ Cano Hatırlatma",
-                        body=metin,
-                        scheduled_date=hedef_zaman,
-                    )
-                page.run_task(_bildirim_planla)
-            return
-        # Sohbet → Gemini LLM
-        _durumu_guncelle("🧠  Düşünüyorum...", "#FFD54F")
-        yanit = zeka.gemini_sor(metin)
-        _cano_konus(yanit)
-
-    # --- Mikrofon butonu (push-to-talk → AudioRecorder) ---
-    def _mikrofon_tiklandi(e):
-        nonlocal dinliyor_mu
-        if dinliyor_mu:
-            # İkinci tıklama — kaydı bitir ve işle
-            dinliyor_mu = False
-            mik_buton.icon = ft.Icons.MIC
-            mik_buton.icon_color = "#FFFFFF"
-            pulse_ring.opacity = 0
-            _durumu_guncelle("⏳  Ses işleniyor...", "#FFD54F")
+        # --- 3. UI BİLEŞENLERİNİ TANIMLA (Önce İskelet) ---
+        sohbet_listesi = ft.ListView(expand=True, spacing=0, padding=ft.Padding.symmetric(vertical=12), auto_scroll=True)
+        durum_metni = ft.Text("Hazırım! 🎙️", size=12, color="#90CAF9", animate_opacity=ft.Animation(300))
+        
+        def _mesaj_ekle(mesaj: str, kullanici_mi: bool):
+            sohbet_listesi.controls.append(_balon_olustur(mesaj, kullanici_mi))
             page.update()
 
-            def _kaydi_isle():
-                nonlocal dinliyor_mu
-                try:
-                    ses_kaydedici.stop_recording()
-                    time.sleep(0.5)  # dosyanın yazılmasını bekle
+        def _durumu_guncelle(metin: str, renk: str = "#90CAF9"):
+            durum_metni.value = metin
+            durum_metni.color = renk
+            page.update()
 
-                    if os.path.exists(kayit_dosya_yolu):
-                        metin = zeka.sesi_metne_cevir(kayit_dosya_yolu)
-                        if metin:
-                            _mesaj_ekle(metin, kullanici_mi=True)
-                            _komutu_isle(metin)
-                        else:
-                            _durumu_guncelle("⚠️  Anlayamadım, tekrar dene", "#FF9800")
-                            time.sleep(1.5)
-                            _durumu_guncelle("Hazırım! 🎙️")
-                    else:
-                        _durumu_guncelle("⚠️  Kayıt dosyası bulunamadı", "#F44336")
-                except Exception as ex:
-                    _durumu_guncelle(f"Hata: {ex}", "#F44336")
-
-            threading.Thread(target=_kaydi_isle, daemon=True).start()
-            return
-
-        # İlk tıklama — kaydı başlat
-        dinliyor_mu = True
-        mik_buton.icon = ft.Icons.STOP
-        mik_buton.icon_color = "#F44336"
-        pulse_ring.opacity = 1
-        _durumu_guncelle("🎙️  Dinliyorum... (durdurmak için tekrar bas)", "#4FC3F7")
-        page.update()
-
-        ses_kaydedici.start_recording(output_path=kayit_dosya_yolu)
-
-    # --- TextField ile metin girişi ---
-    metin_kutusu = ft.TextField(
-        hint_text="Cano'ya bir şeyler yaz...",
-        hint_style=ft.TextStyle(color="#5C6370"),
-        bgcolor="#161B22",
-        border_color="#21262D",
-        focused_border_color="#1565C0",
-        color="#E0E0E0",
-        border_radius=24,
-        content_padding=ft.Padding.only(left=16, right=8, top=8, bottom=8),
-        expand=True,
-        text_size=14,
-        on_submit=lambda e: _metin_gonder(e),
-    )
-
-    def _metin_gonder(e):
-        metin = metin_kutusu.value.strip()
-        if not metin:
-            return
-        metin_kutusu.value = ""
-        page.update()
-        _mesaj_ekle(metin, kullanici_mi=True)
-        threading.Thread(
-            target=_komutu_isle, args=(metin,), daemon=True
-        ).start()
-
-    gonder_buton = ft.IconButton(
-        icon=ft.Icons.SEND,
-        icon_color="#1565C0",
-        icon_size=24,
-        tooltip="Gönder",
-        on_click=_metin_gonder,
-    )
-
-    # --- Konum Simülatörü Dropdown ---
-    konum_dropdown = ft.Dropdown(
-        label="📍 Konum",
-        value="bilinmiyor",
-        options=[
-            ft.dropdown.Option(key="bilinmiyor", text="📍 Bilinmiyor"),
-            ft.dropdown.Option(key="ev",         text="🏠 Ev"),
-            ft.dropdown.Option(key="belediye",   text="🏛️ Belediye"),
-            ft.dropdown.Option(key="market",     text="🛒 Market"),
-            ft.dropdown.Option(key="okul",       text="🏫 Okul"),
-            ft.dropdown.Option(key="hastane",    text="🏥 Hastane"),
-        ],
-        width=148,
-        height=45,
-        text_size=12,
-        color="#90CAF9",
-        bgcolor="#1E2A3A",
-        border_color="#21262D",
-        border_radius=8,
-        content_padding=ft.Padding.only(left=10, right=4, top=2, bottom=2),
-    )
-
-    def _mevcut_konum() -> str | None:
-        v = konum_dropdown.value
-        return None if v == "bilinmiyor" else v
-
-    # --- Arka plan zamanlayıcısı ---
-    def _zamanlayici():
-        schedule.every(1).minutes.do(
-            lambda: hat.kontrol_et(_cano_konus, _mevcut_konum())
-        )
-        while True:
-            schedule.run_pending()
-            hat.kontrol_et(_cano_konus, _mevcut_konum())
-            time.sleep(10)
-
-    threading.Thread(target=_zamanlayici, daemon=True).start()
-
-    # --- Mikrofon butonu ve nabız animasyonu ---
-    pulse_ring = ft.Container(
-        width=64, height=64, border_radius=32,
-        bgcolor=ft.Colors.with_opacity(0.15, "#4FC3F7"),
-        animate=ft.Animation(600, ft.AnimationCurve.EASE_IN_OUT),
-        opacity=0,
-    )
-
-    mik_buton = ft.IconButton(
-        icon=ft.Icons.MIC,
-        icon_size=28,
-        icon_color="#FFFFFF",
-        bgcolor="#1565C0",
-        width=52,
-        height=52,
-        style=ft.ButtonStyle(shape=ft.CircleBorder(), elevation=6),
-        tooltip="Bas ve konuş",
-        on_click=_mikrofon_tiklandi,
-    )
-
-    mikrofon_alani = ft.Container(
-        content=ft.Stack(
-            controls=[pulse_ring, mik_buton],
-            alignment=ft.Alignment(0, 0),
-        ),
-        alignment=ft.Alignment(0, 0),
-        height=64, width=64,
-    )
-
-    # --- Üst başlık ---
-    baslik = ft.Container(
-        content=ft.Row(
-            controls=[
-                ft.Container(
-                    content=ft.Text("🤖", size=28),
-                    width=44, height=44, border_radius=22,
-                    bgcolor="#1E2A3A",
-                    alignment=ft.Alignment(0, 0),
-                ),
-                ft.Column(
-                    controls=[
-                        ft.Text("Cano", size=20, weight=ft.FontWeight.BOLD, color="#E0E0E0"),
-                        ft.Text("Kişisel Asistan • v4.0", size=11, color="#4FC3F7"),
-                    ],
-                    spacing=0, expand=True,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                ),
-                konum_dropdown,
+        # Konum Dropdown
+        konum_dropdown = ft.Dropdown(
+            label="📍 Konum", value="bilinmiyor",
+            options=[
+                ft.dropdown.Option(key="bilinmiyor", text="📍 Bilinmiyor"),
+                ft.dropdown.Option(key="ev", text="🏠 Ev"),
+                ft.dropdown.Option(key="belediye", text="🏛️ Belediye"),
+                ft.dropdown.Option(key="market", text="🛒 Market"),
             ],
-            spacing=10,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        padding=ft.Padding.symmetric(horizontal=16, vertical=10),
-        bgcolor="#161B22",
-        border=ft.Border.only(bottom=ft.BorderSide(1, "#21262D")),
-    )
-
-    # --- Alt giriş alanı: TextField + Mikrofon + Durum + İmza ---
-    giris_satiri = ft.Row(
-        controls=[metin_kutusu, mikrofon_alani, gonder_buton],
-        spacing=6,
-        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-    )
-
-    imza = ft.Text(
-        "Developed by Onurcan KAYA",
-        size=9, color="#3D4450",
-        text_align=ft.TextAlign.CENTER,
-        italic=True,
-    )
-
-    alt_alan = ft.Container(
-        content=ft.Column(
-            controls=[durum_metni, giris_satiri, imza],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=6,
-        ),
-        padding=ft.Padding.only(left=12, right=12, top=6, bottom=10),
-        bgcolor="#161B22",
-        border=ft.Border.only(top=ft.BorderSide(1, "#21262D")),
-    )
-
-    # --- Sayfa düzeni ---
-    page.add(
-        ft.Column(
-            controls=[
-                baslik,
-                ft.Container(content=sohbet_listesi, expand=True, bgcolor="#0D1117"),
-                alt_alan,
-            ],
-            expand=True, spacing=0,
+            width=140, height=45, text_size=12, color="#90CAF9", bgcolor="#1E2A3A", border_radius=8,
         )
-    )
 
-    # Hoşgeldin mesajı
-    def _hosgeldin():
-        _cano_konus("Merhaba! Ben Cano. Mikrofona basarak konuş veya yazarak sor!")
+        def _mevcut_konum() -> str | None:
+            return None if konum_dropdown.value == "bilinmiyor" else konum_dropdown.value
 
-    threading.Thread(target=_hosgeldin, daemon=True).start()
+        # Giriş Alanı
+        metin_kutusu = ft.TextField(
+            hint_text="Cano'ya yaz...", expand=True, border_radius=24, text_size=14,
+            bgcolor="#161B22", color="#E0E0E0", on_submit=lambda e: _metin_gonder(e)
+        )
 
+        # Mikrofon ve Animasyon
+        pulse_ring = ft.Container(width=64, height=64, border_radius=32, bgcolor=ft.Colors.with_opacity(0.15, "#4FC3F7"), opacity=0, animate=ft.Animation(600))
+        mik_buton = ft.IconButton(icon=ft.Icons.MIC, icon_size=28, bgcolor="#1565C0", on_click=lambda e: _mikrofon_tiklandi(e))
+        
+        # UI Montajı
+        baslik = ft.Container(
+            content=ft.Row([
+                ft.Text("🤖", size=24),
+                ft.Column([ft.Text("Cano", weight="bold"), ft.Text("v4.0 Bildirimli", size=10)], spacing=0, expand=True),
+                konum_dropdown
+            ]), padding=15, bgcolor="#161B22"
+        )
+        
+        alt_alan = ft.Container(
+            content=ft.Column([
+                durum_metni, 
+                ft.Row([metin_kutusu, ft.Stack([pulse_ring, mik_buton], alignment=ft.Alignment(0,0)), ft.IconButton(ft.Icons.SEND, on_click=lambda e: _metin_gonder(e))], spacing=5),
+                ft.Text("Developed by Onurcan KAYA", size=9, color="#3D4450", italic=True)
+            ], horizontal_alignment="center"), padding=10, bgcolor="#161B22"
+        )
 
-# ---------------------------------------------------------------------------
-# Uygulama başlatma
-# ---------------------------------------------------------------------------
+        # --- 4. EKRANI HEMEN ÇİZ (Siyah Ekranı Engellemek İçin En Kritik Adım) ---
+        page.add(ft.Column([baslik, ft.Container(sohbet_listesi, expand=True), alt_alan], expand=True, spacing=0))
+        page.update() # Arayüz artık Android ekranında görünüyor ✅
+
+        # --- 5. OVERLAY VE BİLEŞENLER (Ekran çizildikten sonra) ---
+        ses_oynatici = ft.Audio(src="", autoplay=False)
+        ses_kaydedici = ft.AudioRecorder(audio_encoder=ft.AudioEncoder.WAV)
+        page.overlay.extend([ses_oynatici, ses_kaydedici])
+        
+        bildirimler = None
+        if BILDIRIM_DESTEGI:
+            bildirimler = LocalNotifications()
+            page.overlay.append(bildirimler)
+            page.run_task(bildirimler.request_permissions)
+
+        # --- 6. FONKSİYONLAR (Closure'lar) ---
+        def _cano_konus(metin: str):
+            _mesaj_ekle(metin, False)
+            _durumu_guncelle("🔊 Cano konuşuyor...", "#CE93D8")
+            try:
+                mp3_yol = ses.konuş(metin)
+                ses_oynatici.src = mp3_yol
+                ses_oynatici.play()
+            except: pass
+            _durumu_guncelle("Hazırım! 🎙️")
+
+        def _komutu_isle(metin: str):
+            if _komut_icerir(metin, CIKIS_ANAHTAR): _cano_konus("Görüşürüz Onurcan!"); return
+            if _komut_icerir(metin, BUTCE_OZET_ANAHTAR): _cano_konus(butce.harcama_ozeti()); return
+            if _komut_icerir(metin, SORGULAMA_ANAHTAR): _cano_konus(hat.bekleyenleri_oku()); return
+            if _komut_icerir(metin, HARCAMA_ANAHTAR): _cano_konus(butce.harcama_ekle(metin)); return
+            if _hatirlatici_niyeti_var(metin):
+                geri_bildirim, hedef_zaman = hat.hatirlatici_ekle(metin)
+                _cano_konus(geri_bildirim)
+                if hedef_zaman and bildirimler:
+                    page.run_task(lambda: bildirimler.schedule_notification(id=hat.yeni_bildirim_id(), title="⏰ Cano Hatırlatma", body=metin, scheduled_date=hedef_zaman))
+                return
+            _cano_konus(zeka.gemini_sor(metin))
+
+        def _mikrofon_tiklandi(e):
+            nonlocal dinliyor_mu
+            if dinliyor_mu:
+                dinliyor_mu = False
+                mik_buton.icon = ft.Icons.MIC; pulse_ring.opacity = 0; _durumu_guncelle("⏳ İşleniyor...")
+                ses_kaydedici.stop_recording()
+                time.sleep(0.5)
+                metin = zeka.sesi_metne_cevir(kayit_dosya_yolu)
+                if metin: _mesaj_ekle(metin, True); _komutu_isle(metin)
+                else: _durumu_guncelle("Anlayamadım 🎙️")
+            else:
+                dinliyor_mu = True
+                mik_buton.icon = ft.Icons.STOP; pulse_ring.opacity = 1; _durumu_guncelle("🎙️ Dinliyorum...")
+                ses_kaydedici.start_recording(kayit_dosya_yolu)
+            page.update()
+
+        def _metin_gonder(e):
+            val = metin_kutusu.value.strip()
+            if not val: return
+            metin_kutusu.value = ""; _mesaj_ekle(val, True)
+            threading.Thread(target=_komutu_isle, args=(val,), daemon=True).start()
+
+        # --- 7. ARKA PLAN GÖREVLERİ (En Son Başlat) ---
+        def _arka_plan_dongusu():
+            time.sleep(2) # Uygulama iyice otursun
+            _cano_konus("Merhaba Onurcan! Cano v4.0 cebinde, seni dinliyorum.")
+            while True:
+                schedule.run_pending()
+                hat.kontrol_et(_cano_konus, _mevcut_konum())
+                time.sleep(10)
+
+        threading.Thread(target=_arka_plan_dongusu, daemon=True).start()
+
+    except Exception:
+        # Hata detaylarını siyah ekran yerine kırmızı yazıyla göster
+        err = traceback.format_exc()
+        page.add(ft.Text(f"Başlatma Hatası:\n{err}", color="red", size=10))
+        page.update()
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.app(target=main) # ft.run yerine ft.app (Mobil Standartı)
