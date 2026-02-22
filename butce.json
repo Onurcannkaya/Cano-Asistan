@@ -1,0 +1,32 @@
+[
+  {
+    "tutar": 350.0,
+    "aciklama": "marketten kahvaltılık",
+    "kategori": "market",
+    "tarih": "2026-02-22 00:53"
+  },
+  {
+    "tutar": 120.0,
+    "aciklama": "taksiye",
+    "kategori": "ulaşım",
+    "tarih": "2026-02-22 00:54"
+  },
+  {
+    "tutar": 400.0,
+    "aciklama": "marketten alışveriş",
+    "kategori": "market",
+    "tarih": "2026-02-22 01:10"
+  },
+  {
+    "tutar": 250.0,
+    "aciklama": "marketten kahve",
+    "kategori": "market",
+    "tarih": "2026-02-22 14:06"
+  },
+  {
+    "tutar": 30.0,
+    "aciklama": "otobüse ver",
+    "kategori": "ulaşım",
+    "tarih": "2026-02-22 14:14"
+  }
+]

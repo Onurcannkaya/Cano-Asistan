@@ -1,0 +1,79 @@
+# =============================================================================
+# Cano Sesli Asistan — GitHub Actions APK Build
+# =============================================================================
+# Bu workflow:
+#   1. Ubuntu sunucusunda Python + Flutter kurar
+#   2. Flet ile Android APK derler
+#   3. APK dosyasını indirilebilir artifact olarak sunar
+#
+# Kullanım:
+#   - GitHub repo'suna push yap → otomatik tetiklenir
+#   - Veya Actions sekmesinden "Run workflow" ile elle başlat
+#
+# Gerekli Secret:
+#   Repo Settings → Secrets → GEMINI_API_KEY
+# =============================================================================
+
+name: Cano APK Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # elle tetikleme butonu
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # --- 1. Kodu çek ---
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- 2. Python kur ---
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # --- 3. Flutter SDK kur (Flet APK build için gerekli) ---
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.4"
+          channel: stable
+
+      # --- 4. Java 17 kur (Android SDK için gerekli) ---
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      # --- 5. Flet CLI kur ---
+      - name: Install Flet CLI
+        run: pip install flet
+
+      # --- 6. Gemini API Key'i ortam değişkenine yaz ---
+      #     (zeka_motoru.py bunu os.environ.get ile okur)
+      - name: Set API key
+        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
+
+      # --- 7. APK derle ---
+      - name: Build APK
+        run: |
+          flet build apk \
+            --project "Cano" \
+            --org "com.onurcankaya" \
+            --product "Cano Asistan" \
+            --description "Sesli Kişisel Asistan"
+
+      # --- 8. APK dosyasını artifact olarak sun ---
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cano-apk
+          path: build/apk/*.apk
+          retention-days: 30
+          if-no-files-found: error

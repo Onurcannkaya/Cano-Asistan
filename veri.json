@@ -1,0 +1,22 @@
+[
+  {
+    "metin": "akşam 20.00'de halı saha maçım var hatırlat bana",
+    "zaman": "2026-02-22 20:00",
+    "tetiklendi": false
+  },
+  {
+    "metin": "Cano 2 dakika sonra bana su içmeyi hatırlat",
+    "zaman": "2026-02-22 00:41",
+    "tetiklendi": true
+  },
+  {
+    "metin": "Cano bana 2 dakika sonra su",
+    "zaman": "2026-02-22 00:47",
+    "tetiklendi": false
+  },
+  {
+    "metin": "Cano akıllı şehir projesi yazıyorum Bana çok kısa bir motivasyon cümlesi kurar mısın",
+    "zaman": "2026-02-23 13:00",
+    "tetiklendi": false
+  }
+]
