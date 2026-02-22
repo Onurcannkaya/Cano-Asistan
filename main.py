@@ -74,18 +74,18 @@ def _balon_olustur(mesaj: str, kullanici_mi: bool) -> ft.Container:
     return ft.Container(
         content=ft.Column(
             controls=[
-                ft.Text("Sen" if kullanici_mi else "🤖 Cano", size=11, weight=ft.FontWeight.BOLD, color="#90CAF9" if kullanici_mi else "#CE93D8"),
+                ft.Text("Sen" if kullanici_mi else "🤖 Cano", size=11, weight="bold", color="#90CAF9" if kullanici_mi else "#CE93D8"),
                 ft.Text(mesaj, size=14, color="#E0E0E0", selectable=True),
                 ft.Text(datetime.now().strftime("%H:%M"), size=9, color="#757575"),
             ],
             spacing=2, tight=True,
         ),
         bgcolor="#1E2A3A" if kullanici_mi else "#2A1E3A",
-        border_radius=ft.BorderRadius.only(top_left=16, top_right=16, bottom_right=4 if kullanici_mi else 16, bottom_left=16 if kullanici_mi else 4),
-        padding=ft.Padding.symmetric(horizontal=16, vertical=10),
-        margin=ft.Margin.only(left=80 if kullanici_mi else 8, right=8 if kullanici_mi else 80, bottom=6),
-        alignment=ft.Alignment(1, 0) if kullanici_mi else ft.Alignment(-1, 0),
-        animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
+        border_radius=ft.border_radius.only(top_left=16, top_right=16, bottom_right=4 if kullanici_mi else 16, bottom_left=16 if kullanici_mi else 4),
+        padding=ft.padding.Padding(16, 10, 16, 10),
+        margin=ft.margin.only(left=80 if kullanici_mi else 8, right=8 if kullanici_mi else 80, bottom=6),
+        alignment=ft.alignment.center_right if kullanici_mi else ft.alignment.center_left,
+        animate=ft.animation.Animation(300, "easeOut"),
     )
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,8 @@ def main(page: ft.Page):
         kayit_dosya_yolu = os.path.join(tempfile.gettempdir(), "cano_kayit.wav")
 
         # --- 3. UI BİLEŞENLERİNİ TANIMLA (Önce İskelet) ---
-        sohbet_listesi = ft.ListView(expand=True, spacing=0, padding=ft.Padding.symmetric(vertical=12), auto_scroll=True)
-        durum_metni = ft.Text("Hazırım! 🎙️", size=12, color="#90CAF9", animate_opacity=ft.Animation(300))
+        sohbet_listesi = ft.ListView(expand=True, spacing=0, padding=ft.padding.Padding(0, 12, 0, 12), auto_scroll=True)
+        durum_metni = ft.Text("Hazırım! 🎙️", size=12, color="#90CAF9", animate_opacity=ft.animation.Animation(300))
         
         def _mesaj_ekle(mesaj: str, kullanici_mi: bool):
             sohbet_listesi.controls.append(_balon_olustur(mesaj, kullanici_mi))
@@ -142,8 +142,8 @@ def main(page: ft.Page):
         )
 
         # Mikrofon ve Animasyon
-        pulse_ring = ft.Container(width=64, height=64, border_radius=32, bgcolor=ft.Colors.with_opacity(0.15, "#4FC3F7"), opacity=0, animate=ft.Animation(600))
-        mik_buton = ft.IconButton(icon=ft.Icons.MIC, icon_size=28, bgcolor="#1565C0", on_click=lambda e: _mikrofon_tiklandi(e))
+        pulse_ring = ft.Container(width=64, height=64, border_radius=32, bgcolor=ft.colors.with_opacity(0.15, "#4FC3F7"), opacity=0, animate=ft.animation.Animation(600))
+        mik_buton = ft.IconButton(icon=ft.icons.MIC, icon_size=28, bgcolor="#1565C0", on_click=lambda e: _mikrofon_tiklandi(e))
         
         # UI Montajı
         baslik = ft.Container(
@@ -157,7 +157,7 @@ def main(page: ft.Page):
         alt_alan = ft.Container(
             content=ft.Column([
                 durum_metni, 
-                ft.Row([metin_kutusu, ft.Stack([pulse_ring, mik_buton], alignment=ft.Alignment(0,0)), ft.IconButton(ft.Icons.SEND, on_click=lambda e: _metin_gonder(e))], spacing=5),
+                ft.Row([metin_kutusu, ft.Stack([pulse_ring, mik_buton], alignment=ft.alignment.center), ft.IconButton(ft.icons.SEND, on_click=lambda e: _metin_gonder(e))], spacing=5),
                 ft.Text("Developed by Onurcan KAYA", size=9, color="#3D4450", italic=True)
             ], horizontal_alignment="center"), padding=10, bgcolor="#161B22"
         )
@@ -168,7 +168,7 @@ def main(page: ft.Page):
 
         # --- 5. OVERLAY VE BİLEŞENLER (Ekran çizildikten sonra) ---
         ses_oynatici = ft.Audio(src="", autoplay=False)
-        ses_kaydedici = ft.AudioRecorder(audio_encoder=ft.AudioEncoder.WAV)
+        ses_kaydedici = ft.AudioRecorder(audio_encoder="wav")
         page.overlay.extend([ses_oynatici, ses_kaydedici])
         
         bildirimler = None
@@ -205,7 +205,7 @@ def main(page: ft.Page):
             nonlocal dinliyor_mu
             if dinliyor_mu:
                 dinliyor_mu = False
-                mik_buton.icon = ft.Icons.MIC; pulse_ring.opacity = 0; _durumu_guncelle("⏳ İşleniyor...")
+                mik_buton.icon = ft.icons.MIC; pulse_ring.opacity = 0; _durumu_guncelle("⏳ İşleniyor...")
                 ses_kaydedici.stop_recording()
                 time.sleep(0.5)
                 metin = zeka.sesi_metne_cevir(kayit_dosya_yolu)
@@ -213,7 +213,7 @@ def main(page: ft.Page):
                 else: _durumu_guncelle("Anlayamadım 🎙️")
             else:
                 dinliyor_mu = True
-                mik_buton.icon = ft.Icons.STOP; pulse_ring.opacity = 1; _durumu_guncelle("🎙️ Dinliyorum...")
+                mik_buton.icon = ft.icons.STOP; pulse_ring.opacity = 1; _durumu_guncelle("🎙️ Dinliyorum...")
                 ses_kaydedici.start_recording(kayit_dosya_yolu)
             page.update()
 
@@ -226,7 +226,7 @@ def main(page: ft.Page):
         # --- 7. ARKA PLAN GÖREVLERİ (En Son Başlat) ---
         def _arka_plan_dongusu():
             time.sleep(2) # Uygulama iyice otursun
-            _cano_konus("Merhaba Onurcan! Cano v4.0 cebinde, seni dinliyorum.")
+            _cano_konus("Merhaba Onurcan! Cano v3.8 cebinde, seni dinliyorum.")
             while True:
                 schedule.run_pending()
                 hat.kontrol_et(_cano_konus, _mevcut_konum())
