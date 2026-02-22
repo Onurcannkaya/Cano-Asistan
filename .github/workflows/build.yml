@@ -60,11 +60,12 @@ jobs:
       - name: Set API key
         run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
 
-      # --- 7. APK derle (--include-packages ile bildirim kütüphanesini zorla paketle) ---
+      # --- 7. APK derle ---
       - name: Build APK
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           yes | flet build apk \
-            --include-packages flet_notifications \
             --project "Cano" \
             --org "com.onurcankaya" \
             --product "Cano Asistan" \
