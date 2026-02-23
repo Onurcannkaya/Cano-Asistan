@@ -250,7 +250,7 @@ def main(page: ft.Page):
                     content=ft.Text("✨", size=20),
                     width=40, height=40, border_radius=20,
                     bgcolor=ft.Colors.with_opacity(0.1, Renk.ACCENT_PURPLE),
-                    alignment=ft.alignment.CENTER,
+                    alignment=ft.Alignment(0, 0),
                 ),
                 ft.Column([
                     ft.Text("Cano", size=18, weight=ft.FontWeight.W_700, color=Renk.TEXT_PRIMARY),
@@ -270,7 +270,7 @@ def main(page: ft.Page):
                 durum_satiri,
                 ft.Row([
                     metin_kutusu,
-                    ft.Stack([pulse_ring, mik_buton], alignment=ft.alignment.CENTER),
+                    ft.Stack([pulse_ring, mik_buton], alignment=ft.Alignment(0, 0)),
                     gonder_buton,
                 ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Text("Developed by Onurcan KAYA", size=8, color=Renk.TEXT_DIM, italic=True,
