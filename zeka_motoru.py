@@ -14,9 +14,9 @@ from google import genai
 # Yapılandırma
 # ---------------------------------------------------------------------------
 
-# API anahtarı: ortam değişkeninden çek, yoksa varsayılanı kullan
-# Güvenlik: Production'da kesinlikle ortam değişkeni kullan!
-API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDyu-SrGXjfHM-nSOG5d6FsKvrg3l1-HQU")
+# API anahtarı: ortam değişkeninden çek (güvenlik için koda ASLA yazılmaz!)
+# Ayarlama: $env:GEMINI_API_KEY = "key-buraya"  (PowerShell)
+API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Şelale model hiyerarşisi — sırayla denenir
 # İlk model başarısız olursa ikinciye, o da olmazsa üçüncüye geçer
