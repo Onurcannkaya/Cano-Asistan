@@ -177,22 +177,31 @@ def main(page: ft.Page):
             page.run_task(bildirimler.request_permissions)
 
         # --- 6. FONKSİYONLAR (Closure'lar) ---
-        def _cano_konus(metin: str):
-            _mesaj_ekle(metin, False)
-            _durumu_guncelle("🔊 Cano konuşuyor...", "#CE93D8")
+        def _ses_cal(metin: str):
+            """TTS ses dosyası oluştur ve arka planda çal."""
             try:
                 mp3_yol = ses.konuş(metin)
-                # Her seferinde yeni Audio oluştur (boş src hatası önlenir)
                 oynatici = ft.Audio(src=mp3_yol, autoplay=True)
                 page.overlay.append(oynatici)
                 page.update()
-                # Ses çalınsın diye tahmini bekleme
-                time.sleep(max(1.5, len(metin) * 0.08))
-                # Eski oynatıcıyı temizle
+                # Ses bitene kadar bekle (karakter başına ~100ms + 2s yükleme)
+                time.sleep(max(2.5, len(metin) * 0.10))
                 page.overlay.remove(oynatici)
             except Exception as e:
                 print(f"[!] TTS hatası: {e}")
             _durumu_guncelle("Hazırım! 🎙️")
+
+        def _cano_konus(metin: str):
+            """Metni hemen ekrana yaz, sesi arka planda çal."""
+            _mesaj_ekle(metin, False)
+            _durumu_guncelle("🔊 Cano konuşuyor...", "#CE93D8")
+            threading.Thread(target=_ses_cal, args=(metin,), daemon=True).start()
+
+        def _cano_konus_bekle(metin: str):
+            """Metni yaz ve sesin bitmesini bekle (açılış gibi sıralı işlemler için)."""
+            _mesaj_ekle(metin, False)
+            _durumu_guncelle("🔊 Cano konuşuyor...", "#CE93D8")
+            _ses_cal(metin)
 
         def _komutu_isle(metin: str):
             if _komut_icerir(metin, CIKIS_ANAHTAR): _cano_konus("Görüşürüz Onurcan!"); return
@@ -234,7 +243,7 @@ def main(page: ft.Page):
         # --- 7. ARKA PLAN GÖREVLERİ (En Son Başlat) ---
         def _arka_plan_dongusu():
             time.sleep(2) # Uygulama iyice otursun
-            _cano_konus("Merhaba Onurcan! Cano v3.8 cebinde, seni dinliyorum.")
+            _cano_konus_bekle("Merhaba Onurcan! Cano v3.8 cebinde, seni dinliyorum.")
             while True:
                 schedule.run_pending()
                 hat.kontrol_et(_cano_konus, _mevcut_konum())
