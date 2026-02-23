@@ -21,9 +21,9 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # Şelale model hiyerarşisi — sırayla denenir
 # İlk model başarısız olursa ikinciye, o da olmazsa üçüncüye geçer
 MODELLER = [
-    "gemini-2.0-flash",     # 1. tercih: en hızlı
-    "gemini-1.5-flash",     # 2. yedek: hafif ve stabil
-    "gemini-1.5-pro",       # 3. yedek: en yetenekli
+    "gemini-2.5-flash",       # 1. tercih: en hızlı ve güncel
+    "gemini-2.5-pro",         # 2. yedek: en yetenekli
+    "gemini-2.0-flash-001",   # 3. yedek: stabil eski versiyon
 ]
 
 # Cano'nun kişiliğini tanımlayan sistem talimatı
