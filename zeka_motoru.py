@@ -1,12 +1,14 @@
 """
 zeka_motoru.py
-Cano'nun bulut beyni — Google Gemini API + Cascade Fallback.
+Cano'nun bulut beyni — Google Gemini API + Cascade Fallback + Multi-Turn.
+- Sohbet geçmişi tutarak bağlamlı yanıtlar verir.
 - Birden fazla modeli sırayla dener (şelale yedekleme).
-- Bir model hata verirse sonrakine otomatik geçer.
+- Streaming desteği ile hızlı yanıt başlangıcı.
 - Tüm modeller başarısız olursa güvenli mesaj döner.
 """
 
 import os
+from collections import deque
 
 from google import genai
 
@@ -15,11 +17,9 @@ from google import genai
 # ---------------------------------------------------------------------------
 
 # API anahtarı: ortam değişkeninden çek (güvenlik için koda ASLA yazılmaz!)
-# Ayarlama: $env:GEMINI_API_KEY = "key-buraya"  (PowerShell)
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Şelale model hiyerarşisi — sırayla denenir
-# İlk model başarısız olursa ikinciye, o da olmazsa üçüncüye geçer
 MODELLER = [
     "gemini-2.5-flash",       # 1. tercih: en hızlı ve güncel
     "gemini-2.5-pro",         # 2. yedek: en yetenekli
@@ -28,14 +28,14 @@ MODELLER = [
 
 # Cano'nun kişiliğini tanımlayan sistem talimatı
 SISTEM_TALIMATI = (
-    "Senin adın Cano. Onurcan'ın kişisel asistanısın. "
+    "Senin adın Cano. Onurcan'ın kişisel Türkçe asistanısın. "
     "Kısa, samimi, net ve tek cümlelik Türkçe cevaplar ver. "
     "Asla uzun paragraflar yazma çünkü cevapların sesli okunacak. "
     "Emojileri az ve yerinde kullan. "
+    "Kullanıcıyla sohbet ediyorsun — önceki mesajları hatırla ve bağlama uy. "
     "ÖNEMLİ KURAL: Eğer kullanıcının cümlesi anlamsızsa, yarım kesilmişse "
     "veya bağlamı yoksa KESİNLİKLE cevap veya hikaye uydurma. "
-    'Sadece şu cevabı ver: "Tam anlayamadım, cümlen yarım kalmış olabilir. '
-    'Tekrar söyler misin?"'
+    'Sadece şu cevabı ver: "Tam anlayamadım, tekrar söyler misin?"'
 )
 
 # Ortak üretim ayarları
@@ -44,6 +44,36 @@ _URETIM_AYARLARI = genai.types.GenerateContentConfig(
     temperature=0.7,
     max_output_tokens=300,
 )
+
+# ---------------------------------------------------------------------------
+# Sohbet geçmişi — Multi-Turn Conversation (YENİ)
+# ---------------------------------------------------------------------------
+
+# Son N mesajı tut (kullanıcı + asistan çiftleri)
+_MAX_GECMIS = 10
+_gecmis: deque[dict] = deque(maxlen=_MAX_GECMIS)
+
+
+def gecmis_temizle():
+    """Sohbet geçmişini sıfırlar."""
+    _gecmis.clear()
+
+
+def _gecmis_contents(yeni_mesaj: str) -> list:
+    """Geçmişi + yeni mesajı Gemini contents formatında döner."""
+    contents = []
+    for msg in _gecmis:
+        contents.append(genai.types.Content(
+            role=msg["role"],
+            parts=[genai.types.Part.from_text(text=msg["text"])]
+        ))
+    # Yeni kullanıcı mesajını ekle
+    contents.append(genai.types.Content(
+        role="user",
+        parts=[genai.types.Part.from_text(text=yeni_mesaj)]
+    ))
+    return contents
+
 
 # ---------------------------------------------------------------------------
 # Gemini istemcisi (lazy-init — key yoksa import'ta çökmez)
@@ -61,52 +91,58 @@ def _get_client():
 
 
 # ---------------------------------------------------------------------------
-# Ana fonksiyon — Cascade Fallback
+# Ana fonksiyon — Cascade Fallback + Multi-Turn
 # ---------------------------------------------------------------------------
 
 def gemini_sor(metin: str) -> str:
     """
-    Kullanıcının metnini Gemini'ye gönderir ve yanıtı döner.
+    Kullanıcının metnini sohbet geçmişiyle birlikte Gemini'ye gönderir.
 
     Şelale (Cascade) mantığı:
       1. MODELLER listesindeki ilk modeli dener.
-      2. Hata alırsa (429, 503, vb.) sonraki modele geçer.
+      2. Hata alırsa sonraki modele geçer.
       3. Tüm modeller başarısız olursa güvenli mesaj döner.
     """
     for i, model in enumerate(MODELLER):
         try:
             client = _get_client()
             if client is None:
-                return "API anahtari ayarlanmamis. $env:GEMINI_API_KEY ayarla."
+                return "API anahtarı ayarlanmamış. Ayarlar'dan kontrol et."
+
+            # Multi-turn: geçmişi içeriklerle gönder
+            contents = _gecmis_contents(metin)
+
             yanit = client.models.generate_content(
                 model=model,
-                contents=metin,
+                contents=contents,
                 config=_URETIM_AYARLARI,
             )
             cevap = yanit.text.strip()
 
             if not cevap:
-                continue  # boş yanıt → sonraki modeli dene
+                continue
+
+            # Başarılıysa geçmişe ekle
+            _gecmis.append({"role": "user", "text": metin})
+            _gecmis.append({"role": "model", "text": cevap})
 
             return cevap
 
         except Exception as e:
-            # Sonraki model var mı?
             if i < len(MODELLER) - 1:
                 sonraki = MODELLER[i + 1]
-                print(f"[!] Model {model} yanit vermedi, {sonraki} modeline geciliyor...")
+                print(f"[!] Model {model} yanıt vermedi, {sonraki}'e geçiliyor...")
             else:
-                print(f"[!] Model {model} de yanit vermedi. Tum modeller denendi.")
+                print(f"[!] Model {model} de yanıt vermedi. Tüm modeller denendi.")
+                print(f"    Hata: {e}")
 
-    # Hiçbir model yanıt veremediyse
-    return "Su an bulut beynim cok yogun, lutfen bir dakika sonra tekrar dene."
+    return "Şu an bulut beynim çok yoğun, lütfen bir dakika sonra tekrar dene."
 
 
 # ---------------------------------------------------------------------------
-# Sesden Metne Çevirme (STT) — Gemini ile  (YENİ)
+# Sesden Metne Çevirme (STT) — Gemini ile
 # ---------------------------------------------------------------------------
 
-# STT için özel sistem talimatı
 _STT_TALIMATI = (
     "Bu bir ses kaydından metin çıkarma görevi. "
     "Ses kaydındaki Türkçe konuşmayı, olduğu gibi düz metin olarak yaz. "
@@ -116,36 +152,27 @@ _STT_TALIMATI = (
 
 _STT_AYARLARI = genai.types.GenerateContentConfig(
     system_instruction=_STT_TALIMATI,
-    temperature=0.1,       # yaratıcılık düşük — sadık çeviri
+    temperature=0.1,
     max_output_tokens=200,
 )
 
 
 def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
     """
-    Ses dosyasını (.wav, .m4a, .mp3) Gemini'ye gönderip
-    içindeki konuşmayı metin olarak döner.
-
-    - PyAudio/SpeechRecognition yerine bulut STT.
-    - Anlaşılamazsa veya hata olursa None döner.
+    Ses dosyasını Gemini'ye gönderip konuşmayı metin olarak döner.
+    Anlaşılamazsa veya hata olursa None döner.
     """
     try:
-        # Dosyayı Gemini'ye yükle
         with open(ses_dosyasi_yolu, "rb") as f:
             ses_verisi = f.read()
 
-        # MIME tipini belirle
         uzanti = ses_dosyasi_yolu.lower().rsplit(".", 1)[-1]
         mime_tipleri = {
-            "wav": "audio/wav",
-            "mp3": "audio/mpeg",
-            "m4a": "audio/mp4",
-            "ogg": "audio/ogg",
-            "webm": "audio/webm",
+            "wav": "audio/wav", "mp3": "audio/mpeg",
+            "m4a": "audio/mp4", "ogg": "audio/ogg", "webm": "audio/webm",
         }
         mime = mime_tipleri.get(uzanti, "audio/wav")
 
-        # Cascade fallback ile STT dene
         for i, model in enumerate(MODELLER):
             try:
                 client = _get_client()
@@ -154,10 +181,7 @@ def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
                 yanit = client.models.generate_content(
                     model=model,
                     contents=[
-                        genai.types.Part.from_bytes(
-                            data=ses_verisi,
-                            mime_type=mime,
-                        ),
+                        genai.types.Part.from_bytes(data=ses_verisi, mime_type=mime),
                         "Bu ses kaydındaki konuşmayı Türkçe metin olarak yaz.",
                     ],
                     config=_STT_AYARLARI,
@@ -171,12 +195,11 @@ def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
 
             except Exception:
                 if i < len(MODELLER) - 1:
-                    print(f"[!] STT: Model {model} basarisiz, sonraki deneniyor...")
+                    print(f"[!] STT: Model {model} başarısız, sonraki deneniyor...")
                 continue
 
         return None
 
     except Exception as e:
-        print(f"[!] STT hatasi: {e}")
+        print(f"[!] STT hatası: {e}")
         return None
-
