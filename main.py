@@ -184,8 +184,12 @@ def main(page: ft.Page):
             try:
                 mp3_yol = ses.konuş(metin)
                 ses_oynatici.src = mp3_yol
+                page.update()  # src değişikliğini Flet'e bildir
                 ses_oynatici.play()
-            except: pass
+                # Ses çalınsın diye tahmini bekleme (karakter başına ~80ms)
+                time.sleep(max(1.5, len(metin) * 0.08))
+            except Exception as e:
+                print(f"[!] TTS hatası: {e}")
             _durumu_guncelle("Hazırım! 🎙️")
 
         def _komutu_isle(metin: str):
@@ -199,6 +203,8 @@ def main(page: ft.Page):
                 if hedef_zaman and bildirimler:
                     page.run_task(lambda: bildirimler.schedule_notification(id=hat.yeni_bildirim_id(), title="⏰ Cano Hatırlatma", body=metin, scheduled_date=hedef_zaman))
                 return
+            # AI cevabı için düşünme göstergesi
+            _durumu_guncelle("🧠 Cano düşünüyor...", "#FFB74D")
             _cano_konus(zeka.gemini_sor(metin))
 
         def _mikrofon_tiklandi(e):
@@ -237,8 +243,10 @@ def main(page: ft.Page):
     except Exception:
         # Hata detaylarını siyah ekran yerine kırmızı yazıyla göster
         err = traceback.format_exc()
-        page.add(ft.Text(f"Başlatma Hatası:\n{err}", color="red", size=10))
-        page.update()
+        # NoneType hatası (bildirim modülü) gibi zararsız hataları yoksay
+        if "NoneType: None" not in err:
+            page.add(ft.Text(f"Başlatma Hatası:\n{err}", color="red", size=10))
+            page.update()
 
 if __name__ == "__main__":
     ft.app(target=main) # ft.run yerine ft.app (Mobil Standartı)
