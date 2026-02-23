@@ -86,8 +86,8 @@ def konuş(metin: str) -> str:
 
 def tahmini_sure(metin: str) -> float:
     """Metnin sesli okunma süresini saniye olarak tahmin eder."""
-    # Ortalama: 14 karakter/saniye (Türkçe Neural TTS)
-    return max(2.0, len(metin) / 14.0 + 0.5)
+    # Ortalama: 10 karakter/saniye (Türkçe Neural TTS) + 1.5s yükleme tamponu
+    return max(2.5, len(metin) / 10.0 + 1.5)
 
 
 def temizle(dosya_yolu: str) -> None:

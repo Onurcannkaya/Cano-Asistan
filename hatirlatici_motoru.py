@@ -292,20 +292,38 @@ def bekleyenleri_oku() -> str:
     """
     Henüz tetiklenmemiş hatırlatıcıları sesli okumak için
     düzenli bir metin olarak döner.
+    Süresi geçmiş olanları otomatik temizler.
     """
     liste = _yukle()
+    simdi = datetime.now()
+    degisti = False
+
+    # Süresi geçmiş zaman bazlı hatırlatıcıları otomatik kapat
+    for h in liste:
+        if h["tetiklendi"]:
+            continue
+        if h.get("zaman"):
+            try:
+                hedef = datetime.strptime(h["zaman"], "%Y-%m-%d %H:%M")
+                if hedef < simdi:
+                    h["tetiklendi"] = True
+                    degisti = True
+            except (ValueError, TypeError):
+                pass
+
+    if degisti:
+        _kaydet(liste)
+
     bekleyenler = [h for h in liste if not h["tetiklendi"]]
 
     if not bekleyenler:
-        return "Şu an bekleyen hatırlatıcın yok."
+        return "Şu an bekleyen hatırlatıcın yok, rahat ol! 😊"
 
     satirlar = []
     for i, h in enumerate(bekleyenler, 1):
         if h.get("konum"):
-            # Konum bazlı hatırlatıcı
             satirlar.append(f"{i}. 📍 {h['konum']}'e varınca, {h['metin']}")
         else:
-            # Zaman bazlı hatırlatıcı
             zaman = h["zaman"].split(" ")[1] if " " in str(h.get("zaman", "")) else h.get("zaman", "?")
             satirlar.append(f"{i}. saat {zaman}, {h['metin']}")
 
@@ -320,14 +338,11 @@ def bekleyenleri_oku() -> str:
 def kontrol_et(bildirim_fonksiyonu: Callable[[str], None],
                mevcut_konum: str | None = None) -> None:
     """
-    Bu fonksiyon her dakika çağrılır.
-    - Zamanı gelen hatırlatıcıları tetikler.
-    - Konum eşleşen hatırlatıcıları tetikler (mevcut_konum verilmişse).
-    bildirim_fonksiyonu: ses_motoru.konuş gibi bir çağrılabilir nesne.
-    mevcut_konum: kullanıcının şu an bulunduğu konum adı (simülatörden).
+    Bu fonksiyon periyodik olarak çağrılır.
+    - Zamanı gelen/geçen hatırlatıcıları tetikler.
+    - Konum eşleşen hatırlatıcıları tetikler.
     """
     simdi = datetime.now()
-    simdi_str = simdi.strftime("%Y-%m-%d %H:%M")
 
     liste = _yukle()
     degisti = False
@@ -336,14 +351,21 @@ def kontrol_et(bildirim_fonksiyonu: Callable[[str], None],
         if hatirlatici["tetiklendi"]:
             continue
 
-        # --- Zaman bazlı kontrol ---
-        if hatirlatici.get("zaman") and hatirlatici["zaman"] == simdi_str:
-            mesaj = f"Hatırlatma zamanı! {hatirlatici['metin']}"
-            bildirim_fonksiyonu(mesaj)
-            hatirlatici["tetiklendi"] = True
-            degisti = True
+        # --- Zaman bazlı kontrol (zamanı gelen VEYA geçen) ---
+        if hatirlatici.get("zaman"):
+            try:
+                hedef = datetime.strptime(hatirlatici["zaman"], "%Y-%m-%d %H:%M")
+                if hedef <= simdi:
+                    mesaj = f"Hatırlatma zamanı! {hatirlatici['metin']}"
+                    bildirim_fonksiyonu(mesaj)
+                    hatirlatici["tetiklendi"] = True
+                    degisti = True
+            except (ValueError, TypeError):
+                # Bozuk zaman formatı — otomatik kapat
+                hatirlatici["tetiklendi"] = True
+                degisti = True
 
-        # --- Konum bazlı kontrol (YENİ — Geofencing) ---
+        # --- Konum bazlı kontrol ---
         elif (hatirlatici.get("konum")
               and mevcut_konum
               and hatirlatici["konum"].lower() == mevcut_konum.lower()):
