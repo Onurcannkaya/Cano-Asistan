@@ -335,7 +335,62 @@ def main(page: ft.Page):
                 _cano_konus(hat.bekleyenleri_oku()); return
             if _komut_icerir(metin, HARCAMA_ANAHTAR):
                 _cano_konus(butce.harcama_ekle(metin)); return
+
+            # Hatırlatıcı niyeti var mı? → Gemini ile akıllı ayrıştırma
             if _hatirlatici_niyeti_var(metin):
+                _durumu_guncelle("⏰ Hatırlatıcı kuruluyor...", Renk.ACCENT_ORANGE, spinner=True)
+                ayik = zeka.hatirlatici_ayikla(metin)
+
+                if ayik and ayik.get("zaman_tipi") != "yok":
+                    from datetime import timedelta
+                    simdi = datetime.now()
+                    hedef_zaman = None
+                    geri_bildirim = ""
+
+                    tip = ayik["zaman_tipi"]
+                    gorev = ayik.get("gorev", metin)
+
+                    if tip == "goreceli" and ayik.get("dakika"):
+                        dk = int(ayik["dakika"])
+                        hedef_zaman = simdi + timedelta(minutes=dk)
+                        saat_str = hedef_zaman.strftime("%H:%M")
+                        geri_bildirim = f"Tamam! {saat_str} için hatırlatıcı kurdum — {gorev} ⏰"
+
+                    elif tip == "mutlak" and ayik.get("saat") is not None:
+                        saat = int(ayik["saat"])
+                        dakika = int(ayik.get("dakika_mutlak", 0))
+                        hedef_zaman = simdi.replace(hour=saat, minute=dakika, second=0, microsecond=0)
+                        if hedef_zaman <= simdi:
+                            hedef_zaman += timedelta(days=1)
+                        gun = "yarın" if hedef_zaman.date() > simdi.date() else "bugün"
+                        geri_bildirim = f"Tamam! {gun} {saat:02d}:{dakika:02d} için kurdum — {gorev} ⏰"
+
+                    elif tip == "konum" and ayik.get("konum"):
+                        konum = ayik["konum"]
+                        geri_bildirim = f"Tamam! {konum.capitalize()}'e varınca hatırlatacağım — {gorev} 📍"
+
+                    if geri_bildirim:
+                        # Hatırlatıcıyı kaydet
+                        hat_kayit = {"metin": metin, "tetiklendi": False}
+                        if hedef_zaman:
+                            hat_kayit["zaman"] = hedef_zaman.strftime("%Y-%m-%d %H:%M")
+                        if tip == "konum":
+                            hat_kayit["konum"] = ayik["konum"]
+                            hat_kayit["zaman"] = None
+
+                        hat._yukle  # ensure module loaded
+                        liste = hat._yukle()
+                        liste.append(hat_kayit)
+                        hat._kaydet(liste)
+
+                        _cano_konus(geri_bildirim)
+                        if hedef_zaman and bildirimler:
+                            page.run_task(lambda: bildirimler.schedule_notification(
+                                id=hat.yeni_bildirim_id(), title="⏰ Cano Hatırlatma",
+                                body=gorev, scheduled_date=hedef_zaman))
+                        return
+
+                # Gemini ayrıştıramadıysa eski yöntemi dene
                 geri_bildirim, hedef_zaman = hat.hatirlatici_ekle(metin)
                 _cano_konus(geri_bildirim)
                 if hedef_zaman and bildirimler:
@@ -343,6 +398,7 @@ def main(page: ft.Page):
                         id=hat.yeni_bildirim_id(), title="⏰ Cano Hatırlatma",
                         body=metin, scheduled_date=hedef_zaman))
                 return
+
             # AI yanıtı
             _durumu_guncelle("🧠 Düşünüyor...", Renk.ACCENT_ORANGE, spinner=True)
             _cano_konus(zeka.gemini_sor(metin))

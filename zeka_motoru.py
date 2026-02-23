@@ -26,22 +26,22 @@ MODELLER = [
     "gemini-2.0-flash-001",   # 3. yedek: stabil eski versiyon
 ]
 
-# Cano'nun kişiliğini tanımlayan sistem talimatı
+# Cano'nun kişiliğini tanımlayan sistem talimatı — Samimi & Canlı
 SISTEM_TALIMATI = (
-    "Senin adın Cano. Onurcan'ın kişisel Türkçe asistanısın. "
-    "Kısa, samimi, net ve tek cümlelik Türkçe cevaplar ver. "
-    "Asla uzun paragraflar yazma çünkü cevapların sesli okunacak. "
-    "Emojileri az ve yerinde kullan. "
-    "Kullanıcıyla sohbet ediyorsun — önceki mesajları hatırla ve bağlama uy. "
-    "ÖNEMLİ KURAL: Eğer kullanıcının cümlesi anlamsızsa, yarım kesilmişse "
-    "veya bağlamı yoksa KESİNLİKLE cevap veya hikaye uydurma. "
-    'Sadece şu cevabı ver: "Tam anlayamadım, tekrar söyler misin?"'
+    "Sen Cano'sun! Onurcan'ın en yakın arkadaşı ve kişisel asistanısın. "
+    "Konuşma tarzın samimi, sıcak, enerji dolu ve esprilik. "
+    "Cevapların kısa ve öz olsun — 1-2 cümle yeter, çünkü sesli okunacak. "
+    "Kalıplaşmış değil, doğal konuş. 'Şey', 'haa', 'yahu', 'bak' gibi günlük ifadeler kullan. "
+    "Onurcan'ı tanıyorsun — onu motive et, şakalaş, ilgilen. "
+    "Emojileri seviyorsun ama abartmıyorsun — her mesajda 1 tane yeter. "
+    "Önceki mesajları hatırla ve sohbetin akışına uy. "
+    "Eğer cümle anlaşılmadıysa samimi şekilde tekrar sor, robot gibi konuşma."
 )
 
-# Ortak üretim ayarları
+# Üretim ayarları — biraz daha yaratıcı ve canlı
 _URETIM_AYARLARI = genai.types.GenerateContentConfig(
     system_instruction=SISTEM_TALIMATI,
-    temperature=0.7,
+    temperature=0.85,
     max_output_tokens=300,
 )
 
@@ -202,4 +202,61 @@ def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
 
     except Exception as e:
         print(f"[!] STT hatası: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Akıllı Hatırlatıcı Ayrıştırma — Gemini ile (YENİ)
+# ---------------------------------------------------------------------------
+
+_HATIRLATICI_TALIMATI = (
+    "Kullanıcı bir hatırlatıcı kurmak istiyor. Cümleden şu bilgileri çıkar:\n"
+    "1. gorev: Hatırlatılacak görev (kısa ve net)\n"
+    "2. zaman_tipi: 'goreceli' | 'mutlak' | 'konum' | 'yok'\n"
+    "3. dakika: Göreceli ise kaç dk sonra (int). '1 saat'→60, 'yarım saat'→30\n"
+    "4. saat: Mutlak ise saat (24h format, int)\n"
+    "5. dakika_mutlak: Mutlak ise dakika (int)\n"
+    "6. konum: Konum bazlı ise konum adı\n"
+    "\nSADECE JSON yaz, başka bir şey yazma.\n"
+    'Örnek: {"gorev":"ilacı iç","zaman_tipi":"goreceli","dakika":30}\n'
+    'Örnek: {"gorev":"toplantı","zaman_tipi":"mutlak","saat":14,"dakika_mutlak":30}\n'
+    'Örnek: {"gorev":"dosya imzalat","zaman_tipi":"konum","konum":"belediye"}\n'
+    'Örnek: {"gorev":"araba yıka","zaman_tipi":"yok"}\n'
+    "Şu anki tarih/saat: " + __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+)
+
+_HATIRLATICI_AYARLARI = genai.types.GenerateContentConfig(
+    system_instruction=_HATIRLATICI_TALIMATI,
+    temperature=0.1,
+    max_output_tokens=150,
+)
+
+
+def hatirlatici_ayikla(metin: str) -> dict | None:
+    """
+    Gemini ile doğal dildeki hatırlatıcı cümlesini ayrıştırır.
+    Döner: {"gorev", "zaman_tipi", "dakika"?, "saat"?, "dakika_mutlak"?, "konum"?}
+    """
+    import json as _json
+
+    try:
+        client = _get_client()
+        if client is None:
+            return None
+
+        yanit = client.models.generate_content(
+            model=MODELLER[0],
+            contents=metin,
+            config=_HATIRLATICI_AYARLARI,
+        )
+        ham = yanit.text.strip()
+
+        # ```json ... ``` sarmalayıcısını kaldır
+        if ham.startswith("```"):
+            ham = ham.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        return _json.loads(ham)
+
+    except Exception as e:
+        print(f"[!] Akıllı hatırlatıcı ayrıştırma hatası: {e}")
         return None
