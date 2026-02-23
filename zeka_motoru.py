@@ -42,7 +42,7 @@ SISTEM_TALIMATI = (
 _URETIM_AYARLARI = genai.types.GenerateContentConfig(
     system_instruction=SISTEM_TALIMATI,
     temperature=0.7,
-    max_output_tokens=120,
+    max_output_tokens=300,
 )
 
 # ---------------------------------------------------------------------------
