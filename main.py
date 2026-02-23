@@ -167,9 +167,8 @@ def main(page: ft.Page):
         page.update() # Arayüz artık Android ekranında görünüyor ✅
 
         # --- 5. OVERLAY VE BİLEŞENLER (Ekran çizildikten sonra) ---
-        ses_oynatici = ft.Audio(src="", autoplay=False)
         ses_kaydedici = ft.AudioRecorder(audio_encoder=ft.AudioEncoder.WAV)
-        page.overlay.extend([ses_oynatici, ses_kaydedici])
+        page.overlay.append(ses_kaydedici)
         
         bildirimler = None
         if BILDIRIM_DESTEGI:
@@ -183,11 +182,14 @@ def main(page: ft.Page):
             _durumu_guncelle("🔊 Cano konuşuyor...", "#CE93D8")
             try:
                 mp3_yol = ses.konuş(metin)
-                ses_oynatici.src = mp3_yol
-                page.update()  # src değişikliğini Flet'e bildir
-                ses_oynatici.play()
-                # Ses çalınsın diye tahmini bekleme (karakter başına ~80ms)
+                # Her seferinde yeni Audio oluştur (boş src hatası önlenir)
+                oynatici = ft.Audio(src=mp3_yol, autoplay=True)
+                page.overlay.append(oynatici)
+                page.update()
+                # Ses çalınsın diye tahmini bekleme
                 time.sleep(max(1.5, len(metin) * 0.08))
+                # Eski oynatıcıyı temizle
+                page.overlay.remove(oynatici)
             except Exception as e:
                 print(f"[!] TTS hatası: {e}")
             _durumu_guncelle("Hazırım! 🎙️")
