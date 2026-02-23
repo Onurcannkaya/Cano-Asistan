@@ -21,9 +21,9 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Şelale model hiyerarşisi — sırayla denenir
 MODELLER = [
-    "gemini-2.5-flash",       # 1. tercih: en hızlı ve güncel
-    "gemini-2.5-pro",         # 2. yedek: en yetenekli
-    "gemini-2.0-flash-001",   # 3. yedek: stabil eski versiyon
+    "gemini-2.5-flash",          # 1. tercih: en hızlı ve güncel
+    "gemini-2.5-pro",            # 2. yedek: en yetenekli
+    "gemini-2.0-flash-lite-001", # 3. yedek: hafif ve stabil
 ]
 
 # Cano'nun kişiliğini tanımlayan sistem talimatı — Samimi & Canlı
@@ -210,34 +210,28 @@ def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _HATIRLATICI_TALIMATI = (
-    "Kullanıcı bir hatırlatıcı kurmak istiyor. Cümleden şu bilgileri çıkar:\n"
-    "1. gorev: Hatırlatılacak görev (kısa ve net)\n"
-    "2. zaman_tipi: 'goreceli' | 'mutlak' | 'konum' | 'yok'\n"
-    "3. dakika: Göreceli ise kaç dk sonra (int). '1 saat'→60, 'yarım saat'→30\n"
-    "4. saat: Mutlak ise saat (24h format, int)\n"
-    "5. dakika_mutlak: Mutlak ise dakika (int)\n"
-    "6. konum: Konum bazlı ise konum adı\n"
-    "\nSADECE JSON yaz, başka bir şey yazma.\n"
-    'Örnek: {"gorev":"ilacı iç","zaman_tipi":"goreceli","dakika":30}\n'
-    'Örnek: {"gorev":"toplantı","zaman_tipi":"mutlak","saat":14,"dakika_mutlak":30}\n'
-    'Örnek: {"gorev":"dosya imzalat","zaman_tipi":"konum","konum":"belediye"}\n'
-    'Örnek: {"gorev":"araba yıka","zaman_tipi":"yok"}\n'
-    "Şu anki tarih/saat: " + __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+    "Sen bir veri ayıklama asistanısın. Kullanıcının cümlesinden görev ve zamanı çıkarıp YALNIZCA JSON döndür.\n\n"
+    "Kurallar:\n"
+    "- JSON anahtarları: gorev, zaman_tipi, dakika, saat, dakika_mutlak, konum\n"
+    "- zaman_tipi: 'goreceli' (X dakika/saat sonra), 'mutlak' (belirli saat), 'konum' (bir yere varınca), veya 'yok'\n\n"
+    "Örnek 1: '10 dakika sonra su iç'\n"
+    '{"gorev": "su iç", "zaman_tipi": "goreceli", "dakika": 10}\n\n'
+    "Örnek 2: 'yarın sabah 9da toplantıya git'\n"
+    '{"gorev": "toplantıya git", "zaman_tipi": "mutlak", "saat": 9, "dakika_mutlak": 0}\n\n'
+    "Örnek 3: 'belediyeye varınca dosya imzalat'\n"
+    '{"gorev": "dosya imzalat", "zaman_tipi": "konum", "konum": "belediye"}'
 )
 
 _HATIRLATICI_AYARLARI = genai.types.GenerateContentConfig(
     system_instruction=_HATIRLATICI_TALIMATI,
     temperature=0.1,
-    max_output_tokens=150,
 )
 
 
 def hatirlatici_ayikla(metin: str) -> dict | None:
-    """
-    Gemini ile doğal dildeki hatırlatıcı cümlesini ayrıştırır.
-    Döner: {"gorev", "zaman_tipi", "dakika"?, "saat"?, "dakika_mutlak"?, "konum"?}
-    """
+    """Gemini ile doğal dildeki hatırlatıcı cümlesini ayrıştırır."""
     import json as _json
+    import re as _re
 
     try:
         client = _get_client()
@@ -245,18 +239,26 @@ def hatirlatici_ayikla(metin: str) -> dict | None:
             return None
 
         yanit = client.models.generate_content(
-            model=MODELLER[0],
+            model="gemini-2.5-flash",
             contents=metin,
             config=_HATIRLATICI_AYARLARI,
         )
         ham = yanit.text.strip()
+        print(f"[DEBUG] Hatirlatici RAW: {ham[:200]}")
 
-        # ```json ... ``` sarmalayıcısını kaldır
-        if ham.startswith("```"):
-            ham = ham.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        # Temizle
+        if "```" in ham:
+            ham = ham.replace("```json", "").replace("```", "").strip()
+
+        # JSON bloğunu regex ile çıkar (multi-line destekli)
+        json_eslesme = _re.search(r'\{.+\}', ham, _re.DOTALL)
+        if json_eslesme:
+            sonuc = _json.loads(json_eslesme.group())
+            if "gorev" in sonuc:
+                return sonuc
 
         return _json.loads(ham)
 
     except Exception as e:
-        print(f"[!] Akıllı hatırlatıcı ayrıştırma hatası: {e}")
+        print(f"[!] Hatirlatici ayiklama: {e}")
         return None
