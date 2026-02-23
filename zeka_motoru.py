@@ -46,10 +46,18 @@ _URETIM_AYARLARI = genai.types.GenerateContentConfig(
 )
 
 # ---------------------------------------------------------------------------
-# Gemini istemcisi
+# Gemini istemcisi (lazy-init — key yoksa import'ta çökmez)
 # ---------------------------------------------------------------------------
 
-_client = genai.Client(api_key=API_KEY)
+_client = None
+
+
+def _get_client():
+    """İlk kullanımda client oluşturur. Key yoksa None döner."""
+    global _client
+    if _client is None and API_KEY:
+        _client = genai.Client(api_key=API_KEY)
+    return _client
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +75,10 @@ def gemini_sor(metin: str) -> str:
     """
     for i, model in enumerate(MODELLER):
         try:
-            yanit = _client.models.generate_content(
+            client = _get_client()
+            if client is None:
+                return "API anahtari ayarlanmamis. $env:GEMINI_API_KEY ayarla."
+            yanit = client.models.generate_content(
                 model=model,
                 contents=metin,
                 config=_URETIM_AYARLARI,
@@ -137,7 +148,10 @@ def sesi_metne_cevir(ses_dosyasi_yolu: str) -> str | None:
         # Cascade fallback ile STT dene
         for i, model in enumerate(MODELLER):
             try:
-                yanit = _client.models.generate_content(
+                client = _get_client()
+                if client is None:
+                    return None
+                yanit = client.models.generate_content(
                     model=model,
                     contents=[
                         genai.types.Part.from_bytes(
