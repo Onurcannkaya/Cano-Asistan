@@ -250,7 +250,7 @@ def main(page: ft.Page):
                     content=ft.Text("✨", size=20),
                     width=40, height=40, border_radius=20,
                     bgcolor=ft.Colors.with_opacity(0.1, Renk.ACCENT_PURPLE),
-                    alignment=ft.alignment.center,
+                    alignment=ft.alignment.CENTER,
                 ),
                 ft.Column([
                     ft.Text("Cano", size=18, weight=ft.FontWeight.W_700, color=Renk.TEXT_PRIMARY),
@@ -270,7 +270,7 @@ def main(page: ft.Page):
                 durum_satiri,
                 ft.Row([
                     metin_kutusu,
-                    ft.Stack([pulse_ring, mik_buton], alignment=ft.alignment.center),
+                    ft.Stack([pulse_ring, mik_buton], alignment=ft.alignment.CENTER),
                     gonder_buton,
                 ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Text("Developed by Onurcan KAYA", size=8, color=Renk.TEXT_DIM, italic=True,
@@ -286,8 +286,10 @@ def main(page: ft.Page):
         _safe_update()
 
         # --- 5. OVERLAY ---
-        ses_kaydedici = ft.AudioRecorder(audio_encoder=ft.AudioEncoder.WAV)
-        page.overlay.append(ses_kaydedici)
+        ses_kaydedici = None
+        if hasattr(ft, "AudioRecorder"):
+            ses_kaydedici = ft.AudioRecorder(audio_encoder=ft.AudioEncoder.WAV if hasattr(ft, "AudioEncoder") else None)
+            page.overlay.append(ses_kaydedici)
 
         bildirimler = None
         if BILDIRIM_DESTEGI:
@@ -300,19 +302,35 @@ def main(page: ft.Page):
             """TTS: ses dosyası oluştur ve çal."""
             try:
                 mp3_yol = ses.konuş(metin)
-                oynatici = ft.Audio(src=mp3_yol, autoplay=True)
-                page.overlay.append(oynatici)
-                _safe_update()
-                # Gerçek tahmini süre ile bekle
-                time.sleep(ses.tahmini_sure(metin))
-                try:
-                    page.overlay.remove(oynatici)
-                except Exception:
-                    pass
-                ses.temizle(mp3_yol)
+                oynatici = None
+                
+                def bitti():
+                    try:
+                        if oynatici and hasattr(page.overlay, "remove"):
+                            page.overlay.remove(oynatici)
+                    except Exception:
+                        pass
+                    _safe_update()
+                    ses.temizle(mp3_yol)
+                    _durumu_guncelle("Hazırım! ✨")
+
+                if hasattr(ft, "Audio"):
+                    oynatici = ft.Audio(src=mp3_yol, autoplay=True)
+                    page.overlay.append(oynatici)
+                    _safe_update()
+                    if spn := durum_spinner:
+                        spn.color = Renk.ACCENT_PURPLE
+                    oynatici.on_state_changed = lambda e: bitti() if e.data == "completed" else None
+                    # Fallback timer (in case on_state_changed doesn't fire)
+                    threading.Timer(ses.tahmini_sure(metin) + 1.0, bitti).start()
+                else:
+                    # Flet-audio yoksa sahte bekleme
+                    time.sleep(ses.tahmini_sure(metin))
+                    bitti()
+
             except Exception as e:
                 print(f"[!] TTS hatası: {e}")
-            _durumu_guncelle("Hazırım! ✨")
+                _durumu_guncelle("Hazırım! ✨")
 
         def _cano_konus(metin: str):
             """Metin hemen ekrana, ses arka planda."""
@@ -411,7 +429,8 @@ def main(page: ft.Page):
                 mik_buton.bgcolor = Renk.GRADIENT_START
                 pulse_ring.opacity = 0
                 _durumu_guncelle("⏳ İşleniyor...", Renk.ACCENT_ORANGE, spinner=True)
-                ses_kaydedici.stop_recording()
+                if ses_kaydedici and hasattr(ses_kaydedici, "stop_recording"):
+                    ses_kaydedici.stop_recording()
                 _safe_update()
                 time.sleep(0.5)
                 metin = zeka.sesi_metne_cevir(kayit_dosya_yolu)
